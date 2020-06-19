@@ -1,9 +1,11 @@
+#include <MsTimer2.h>
+
+
 #include <LcdCore.h>
 #include <LCD_ACM1602NI.h>
 #include <Wire.h>
 #include <SD.h>
 #include <EEPROM.h>
-#include <MsTimer2.h>
 LCD_ACM1602NI lcd(0xa0);
 
 //外字登録
@@ -87,119 +89,24 @@ byte charData_b4[8] = {
     B11110,
 };
 
-//体重設定
-int weight = 48;
-//リフレッシュレート
-int late = 500;
 //センサ状態
 int hole = 0;
 int rhole;
 int detect;
-//サイクル計算
-long count, rcycle = 0;
-long cycle;
-//距離(cmで記録)
-long dis = 0.00;
-//オドメーター(cmで記録)
-long odo;
-//最高速度
-int kmhmax = 0;
-//平均速度(15.6kmhなら156)
-float ave;
-int avesei;
-int avesyo;
-//速度(15.6kmhなら156)
-int sp;
-int kmhsei = 0;
-int kmhsyo = 0;
-//最後の検出時間
-long ldetect = 0;
-//走行時間(msで記録)
-long runtime;
-int runh, runm, runs;
-//LCD
-long lrefresh = 0;
-//表示切り替え
-int button;
-int lbutton;
-int dispMode = 0;
 //気温(23.4度なら234)
 int temp;
 int tempsei;
 int tempsyo;
-//電源電圧
-float vbat;
-//消費カロリー
-int cal;
-int mets;
-//EEPROM保存用（30s）
-long lsave = 0;
-//clock
-int watchh, watchm, watchhadd, watchmadd;
-int dp;
-//SettingMode
-int settingmode;
-int sbuttonstatus = 0; //立ち上がりで1,普段は0
-//単位設定
-int tani = 0;
-//オドメーター無効
-int odotrue = 1;
 //SD検出
 int sdtrue = 0;
 //SDファイル名
 char filename[9];
-int filenum = 1;
-//速度バー表示
-int bar;
-int bar5;
-float bars;
-//タイマ状態
-int timermode;
-//タイマCH1用変数
-long runclock = 0;
-int irunclock = 0;
-
-int pushtime = 0;
-
-long lastrefresh = 0;
-
-int timerstatus = 0;
-
-int buttonstatus = 0;
-
-int nowbutton = 0;
-int lastbutton = 0;
-
-long pushdown, pushup = 0;
-
-long prestop;
-
-long starttime;
-long stoptime;
-
-int clockh, clockm, clocks;
-
-//タイマCH2用変数
-long runclock2 = 0;
-long irunclock2 = 0;
-
-int pushtime2 = 0;
-
-int timerstatus2 = 0;
-
-int buttonstatus2 = 0;
-
-int nowbutton2 = 0;
-int lastbutton2 = 0;
-
-long pushdown2, pushup2 = 0;
-
-long prestop2;
-
-long starttime2;
-long stoptime2;
-
-int clockh2, clockm2, clocks2;
+int writeerror;
+//サイクル
+long count, rcycle = 0;
+long cycle = 1000;
+//オドメーター(cm)
+long odo;
 
 void detecter() //センサ割り込み
 {
@@ -217,10 +124,10 @@ void detecter() //センサ割り込み
 
 void setup() //Setup syntax
 {
-    //odo=4219500;
-    //EEPROM.put(10,odo);
+    odo=11719500;
+    EEPROM.put(10,odo);
     EEPROM.get(10, odo);
-    Serial.begin(9600);
+    //Serial.begin(9600);
     analogReference(EXTERNAL);
     //Input settings
     pinMode(2, INPUT);
@@ -232,37 +139,42 @@ void setup() //Setup syntax
     lcd.print("Bicycle");
     lcd.setCursor(0, 1);
     lcd.print("Multi mater");
-    delay(1500);
+    delay(3000);
     lcd.clear();
     lcd.print("SD checking...");
     //SDチェック
     if (SD.begin(10) == false)
     {
         lcd.clear();
-        lcd.print("No SD Error.");
+        lcd.print("SD unavailable!");
         sdtrue = 0;
         delay(1500);
     }
     else
     {
         lcd.clear();
-        lcd.print("SD detected.");
+        lcd.print("SD available.");
         sdtrue = 1;
-        delay(1500);
     }
     //SDファイル生成
     if (sdtrue == 1)
     {
+        int filenum = 1;
         while (1)
         {
-            sprintf(filename, "%d.txt", filenum);
+            sprintf(filename, "%d.csv", filenum);
             if (SD.exists(filename) == 1)
                 filenum++;
             else
                 break;
         }
+        lcd.setCursor(0, 1);
+        lcd.print("File is ");
+        lcd.print(filename);
         File logfile = SD.open(filename, FILE_WRITE);
+        logfile.println("Time,Speed,Distance,Ave.spd,Temp");
         logfile.close();
+        delay(4000);
     }
     //外字登録
     lcd.createChar(3, charData_3);
@@ -290,7 +202,85 @@ void setup() //Setup syntax
 
 void loop()
 {
-    //各種ボタン読み取り
+    //体重
+    int weight = 48;
+    //リフレッシュ
+    int late = 500;
+    //電圧
+    int vbat;
+    //カロリー
+    int cal;
+    int mets;
+    //EEPROM
+    long lsave = 0;
+    //clock
+    int watchh, watchm, watchhadd, watchmadd;
+    int dp;
+    //SettingMode
+    int settingmode;
+    int sbuttonstatus = 0; //立ち上がりで1,普段は0
+    //単位
+    int tani = 0;
+    //オドメーター
+    int odotrue = 1;
+    //速度バー
+    int bar;
+    int bar5;
+    float bars;
+    //距離(cm)
+    long dis = 0.00;
+    //最高速度
+    int kmhmax = 0;
+    //平均速度(15.6kmhなら156)
+    float ave;
+    int avesei;
+    int avesyo;
+    //速度(15.6kmhなら156)
+    int sp = 0;
+    int lsp = 0;
+    int kmhsei = 0;
+    int kmhsyo = 0;
+    //最後の検出
+    long ldetect = 0;
+    //走行時間(ms)
+    long runtime;
+    int runh, runm, runs;
+    //LCD
+    long lrefresh = 0;
+    //表示切替
+    int button;
+    int lbutton;
+    int dispMode = 0;
+    //タイマ状態
+    int timermode;
+    //タイマCH1用変数
+    long runclock = 0;
+    int irunclock = 0;
+    int pushtime = 0;
+    long lastrefresh = 0;
+    int timerstatus = 0;
+    int buttonstatus = 0;
+    int nowbutton = 0;
+    int lastbutton = 0;
+    long pushdown, pushup = 0;
+    long prestop;
+    long starttime;
+    long stoptime;
+    int clockh, clockm, clocks;
+    //タイマCH2用変数
+    long runclock2 = 0;
+    long irunclock2 = 0;
+    int pushtime2 = 0;
+    int timerstatus2 = 0;
+    int buttonstatus2 = 0;
+    int nowbutton2 = 0;
+    int lastbutton2 = 0;
+    long pushdown2, pushup2 = 0;
+    long prestop2;
+    long starttime2;
+    long stoptime2;
+    int clockh2, clockm2, clocks2;
+    //ボタン読み取り
     timermode = digitalRead(3);
     nowbutton = digitalRead(17);
     nowbutton2 = digitalRead(6);
@@ -304,7 +294,7 @@ void loop()
             lastbutton2 = nowbutton2;
         }
     }
-    //設定中のSW1読み取り
+    //設定中SW1読み取り
     if (timermode == 0 && settingmode == 1) //タイマではなく設定中にSW1を読む
     {
         if (nowbutton != lastbutton)
@@ -340,15 +330,12 @@ void loop()
                 watchmadd = 0;
             watchm = (millis() % 3600000) / 60000 + watchmadd;
             break;
-        
-
         }
     }
     //timer（いじるな）
     if (timermode == 1)
     {
         //CH1のタイマー
-
         if (nowbutton != lastbutton)
         {
 
@@ -419,7 +406,6 @@ void loop()
             runclock = (stoptime - starttime) / 1000;
 
         //CH2のタイマー
-
         nowbutton2 = digitalRead(6);
         if (nowbutton2 != lastbutton2)
         {
@@ -542,6 +528,8 @@ void loop()
                 late = 500;
             }
             else if (dispMode == 5)
+                dispMode = 6;
+            else if (dispMode == 6)
                 dispMode = 0;
             lbutton = 0;
         }
@@ -551,7 +539,7 @@ void loop()
             lbutton = 0;
     }
 
-    if (cycle != rcycle)
+    if (detect == 1)
     { //検出
         detect = 0;
         ldetect = millis();
@@ -564,21 +552,17 @@ void loop()
             kmhmax = (sp / 10);
         kmhsei = sp / 10;
         kmhsyo = sp % 10;
-        if (kmhsei >= 3)
+        if (sp >= 30)
             runtime += cycle; //runtimeはmsで記録
         //走行時間計算
         runh = runtime / 3600000;
         runm = (runtime % 3600000) / 60000;
         runs = (runtime / 1000) - (runm * 60) - (runh * 3600);
+        Serial.println(runtime);
         //平均速度計算
-        ave = ((float)dis / 100000) / (runtime / 3600000.0) * 10.0;
+        ave = ((float)dis / 100000.0) / ((float)runtime / 3600000.0) * 10.0;
         avesei = ave / 10;
         avesyo = (int)ave % 10;
-    }
-    else if (detect == 1) //検出したが数値が無変更
-    {
-        detect = 0;
-        ldetect = millis();
     }
     if ((millis() - ldetect) >= 1500) //1500ms以上停止で0km/h
     {
@@ -605,19 +589,27 @@ void loop()
         if (sdtrue == 1)
         {
             File logfile = SD.open(filename, FILE_WRITE);
-            logfile.print(millis());
-            logfile.print(",");
-            logfile.print(sp);
-            logfile.print(",");
-            logfile.print(dis / 100);
-            logfile.print(",");
-            logfile.print(ave / 10);
-            logfile.print(",");
-            logfile.println(temp / 10);
-            logfile.close();
+            if (logfile)
+            {
+                writeerror = 0;
+                logfile.print((float)millis() / 1000);
+                logfile.print(",");
+                logfile.print((float)sp / 10.0);
+                logfile.print(",");
+                logfile.print(dis / 100);
+                logfile.print(",");
+                logfile.print((float)ave / 10);
+                logfile.print(",");
+                logfile.println((float)temp / 10.0);
+                logfile.close();
+            }
+            else
+            {
+                writeerror = 1;
+            }
         }
         //VBat
-        vbat = (2.5 / 1024 * analogRead(1) * 3);
+        vbat = (2.5 / 1024 * analogRead(1) * 300);
         //METs
         if (ave <= 16)
             mets = 40;
@@ -656,6 +648,8 @@ void loop()
                     lcd.print(dis / 100);
                     lcd.print("m");
                 }
+                if (writeerror == 1)
+                    lcd.print(" SD!");
                 break;
 
             case 1:
@@ -735,20 +729,21 @@ void loop()
             case 5:
                 lcd.clear();
                 lcd.print("VBat:");
-                lcd.print(vbat);
+                lcd.print(vbat / 100);
                 lcd.print("V");
-                lcd.setCursor(0,1);
+                break;
+            case 6:
+                lcd.clear();
                 lcd.print("Clock:");
                 lcd.print(watchh);
-                if(dp==1)
+                if (dp == 1)
                     lcd.print(":");
                 else
                     lcd.print(" ");
-                if(watchm<10)
+                if (watchm < 10)
                     lcd.print("0");
                 lcd.print(watchm);
                 break;
-
             case 10:
                 lcd.clear();
                 lcd.print("Dist change ?");
@@ -766,14 +761,14 @@ void loop()
             case 12:
                 lcd.clear();
                 lcd.print("Clock hour?");
-                lcd.setCursor(0,1);
+                lcd.setCursor(0, 1);
                 lcd.print("Current:");
                 lcd.print(watchh);
                 break;
             case 13:
                 lcd.clear();
                 lcd.print("Clock minute?");
-                lcd.setCursor(0,1);
+                lcd.setCursor(0, 1);
                 lcd.print("Current:");
                 lcd.print(watchm);
                 break;
